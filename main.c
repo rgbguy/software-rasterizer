@@ -49,8 +49,15 @@ void savePNG(Framebuffer* fb, const char* filename) {
     );
 }
 
+// basically cross prouduct of BA and CA.
+// Since A B C are in 2D, cross product will be orthogonal = Z.
+// And area of parallelogram = base x height. base is AB. height is ACxsin(theta)  which is cross proudct.
+// So cross proudct = Z component only = Area of parallelogram ABCX. Half of it is area of triangle ABC.
+// if same equation is given a point inside the triangle, it will give area of that triangle. (i.e. Area of Triangle PAB)
+// this area is useful in barycentric interpolation
+
 float edgeFunction(Vec2 a, Vec2 b, Vec2 c) {
-    return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
+    return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x); 
 }
 
 void drawTriangle(Framebuffer* fb, Vertex v0, Vertex v1, Vertex v2) {
