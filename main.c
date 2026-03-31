@@ -4,10 +4,9 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-typedef struct {
-    float x;
-    float y;
-} Vec2;
+// Set to 1, 2, 4, 8, or 16
+#define MSAA_SAMPLES 16
+#include "msaa_samples.h"
 
 typedef struct {
     float r, g, b;
@@ -78,28 +77,38 @@ void drawTriangle(Framebuffer* fb, Vertex v0, Vertex v1, Vertex v2) {
     for (int y = y0; y <= y1; y++) {
         for (int x = x0; x <= x1; x++) {
 
-            Vec2 p = { x + 0.5f, y + 0.5f };
-
-            float w0 = edgeFunction(v1.position, v2.position, p);
-            float w1 = edgeFunction(v2.position, v0.position, p);
-            float w2 = edgeFunction(v0.position, v1.position, p);
-
-            if ((w0 >= 0 && w1 >= 0 && w2 >= 0) ||
-                (w0 <= 0 && w1 <= 0 && w2 <= 0)){
-                w0 /= area;
-                w1 /= area;
-                w2 /= area;
-
-                float r = w0*v0.color.r + w1*v1.color.r + w2*v2.color.r;
-                float g = w0*v0.color.g + w1*v1.color.g + w2*v2.color.g;
-                float b = w0*v0.color.b + w1*v1.color.b + w2*v2.color.b;
-
-                int index = (y * fb->width + x) * 3;
-
-                fb->colorBuffer[index + 0] = (unsigned char)(r * 255);
-                fb->colorBuffer[index + 1] = (unsigned char)(g * 255);
-                fb->colorBuffer[index + 2] = (unsigned char)(b * 255);
+            // Test coverage at MSAA_SAMPLES positions
+            int covered = 0;
+            for (int s = 0; s < MSAA_SAMPLES; s++) {
+                Vec2 sp = { x + sampleOffsets[s].x, y + sampleOffsets[s].y };
+                float s0 = edgeFunction(v1.position, v2.position, sp);
+                float s1 = edgeFunction(v2.position, v0.position, sp);
+                float s2 = edgeFunction(v0.position, v1.position, sp);
+                if ((s0 >= 0 && s1 >= 0 && s2 >= 0) ||
+                    (s0 <= 0 && s1 <= 0 && s2 <= 0)) {
+                    covered++;
+                }
             }
+
+            if (covered == 0) continue;
+
+            // Shade once at pixel center
+            Vec2 center = { x + 0.5f, y + 0.5f };
+            float w0 = edgeFunction(v1.position, v2.position, center) / area;
+            float w1 = edgeFunction(v2.position, v0.position, center) / area;
+            float w2 = edgeFunction(v0.position, v1.position, center) / area;
+
+            float r = w0*v0.color.r + w1*v1.color.r + w2*v2.color.r;
+            float g = w0*v0.color.g + w1*v1.color.g + w2*v2.color.g;
+            float b = w0*v0.color.b + w1*v1.color.b + w2*v2.color.b;
+
+            // Blend shaded color with existing framebuffer based on coverage ratio
+            float alpha = covered / (float)MSAA_SAMPLES;
+            int index = (y * fb->width + x) * 3;
+
+            fb->colorBuffer[index + 0] = (unsigned char)(alpha * r * 255 + (1 - alpha) * fb->colorBuffer[index + 0]);
+            fb->colorBuffer[index + 1] = (unsigned char)(alpha * g * 255 + (1 - alpha) * fb->colorBuffer[index + 1]);
+            fb->colorBuffer[index + 2] = (unsigned char)(alpha * b * 255 + (1 - alpha) * fb->colorBuffer[index + 2]);
         }
     }
 }
@@ -116,7 +125,9 @@ int main() {
 
     drawTriangle(&fb, v0, v1, v2);
 
-    savePNG(&fb, "output.png");
+    char filename[32];
+    snprintf(filename, sizeof(filename), "output_msaa%d.png", MSAA_SAMPLES);
+    savePNG(&fb, filename);
     
     free(fb.colorBuffer);
 
